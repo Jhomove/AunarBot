@@ -457,7 +457,7 @@ const handlePostback = async (sender_psid, received_postback)  => {
                                 console.log("Error getting document", error);
                             });
 }
-
+//
 // Sends response messages via the Send API
 const callSendAPI = async (sender_psid, response) => {
   //Construimos el cuerpo del mensaje

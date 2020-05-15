@@ -1,7 +1,7 @@
 // const functions = require('firebase-functions');
 const admin = require('firebase-admin');
 
-const API_MESSENGER_TOKEN = "EAAC6lmZCUiVYBAP2YyViqwneprBrqLFrp7F5WBfvBmZAZBZCMPz9ZCSnfc6TvSpqLKuZCykyXy7S0dlZAoN7dlZApGSnEn0Y9eLrUs6hZAIKrt8TxuxfZCjhWS3sZAUWm74U8PiVkDq3ISOr1RSYy19COrujqbMZBzBPr4mVdqWljNywpgZDZD";
+const API_MESSENGER_TOKEN = "EAAC6lmZCUiVYBACZBZBZC0hqLTq5VCGiuyMi9ZCMiyeOHcxpydkSjJJ0sWymRDfDKoaeZAfPrDtMsS6IYMv0ZBRsPsadzbOqAZAZAbz5PFhcoQImp8zktZBdvpsrOtVAbAIaXZAuOrl9eVsVljpehE4IqDua1ZBtshR6l1FBrdsiZCzaxswZDZD";
 
 var serviceAccount = require("./permissions.json");
 
@@ -52,6 +52,7 @@ app.post('/api/login',async (req,res) => {
         let userAuth = await auth.getUserByEmail(email);
         auth.createCustomToken(userAuth.uid)
             .then((customToken) => {
+                console.log("customToken",customToken);
                 return res.status(200).json({
                     status: 200,
                     customToken: customToken,
@@ -314,26 +315,58 @@ app.get('/api/read/configuracion/persistent-menu', async (req,res) => {
     });
 })
 
-app.post('/api/create/configuracion/postbacks', authUser ,async (req,res) => {
+app.post('/api/create/postback', authUser, async (req,res) => {
     const data = req.body.data;
-    const doc = Object.keys(data)[0];
-    const postbacks = [...data[doc]];
-    const callback = db.collection('Postbacks').doc(doc)
-                        .set(data)
-                        .then(async () => {
-                            return res.status(200).json({
-                                status: 200,
-                                data: postbacks,
-                                message: 'Se ha creado correctamente el postback.'
-                            })
-                        })
-                        .catch(error => {
-                            console.log("error",error);
-                            return res.status(500).send(error);
-                        })
+    db.collection('Postbacks').doc(data.key)
+        .set(data)
+        .then(async() => {
+            return res.status(200).json({
+                status: 200,
+                data: data,
+                message: 'Se ha creado correctamente el postback.'
+            })
+        })
+        .catch(error => {
+            console.log("error",error);
+            return res.status(500).send(error);
+        })
 });
 
-app.get('/api/read/configuracion/postbacks', async (req,res) => {
+app.post('/api/update/postback', authUser, async (req,res) => {
+    const data = req.body.data;
+    console.log("data",data);
+    const postback = db.collection('Postbacks').doc(data.key);
+    postback.update(data)
+        .then(() => {
+            return res.status(200).json({
+                status: 200,
+                data: data,
+                message: 'Se ha actualizado correctamente el postback.'
+            })
+        })
+        .catch(error => {
+            console.log("error",error);
+            return res.status(500).send(error);
+        })
+})
+
+app.post('/api/delete/postback', authUser, async (req,res) => {
+    const data = req.body.data;
+    console.log("data",data)
+    const postback = db.collection("Postbacks").doc(data.key).delete()
+        .then(() => {
+            return res.status(200).json({
+                status: 200,
+                data: {},
+                message: 'Se ha eliminado correctamente el postback.'
+            }).catch( error => {
+                console.log("error",error)
+                return res.status(500).send(error);
+            })
+        })
+})
+
+app.get('/api/read/postbacks', async (req,res) => {
     try {
         const postbacks = await db.collection('Postbacks').get();
         if(postbacks.empty) {
@@ -346,8 +379,10 @@ app.get('/api/read/configuracion/postbacks', async (req,res) => {
         }
         let response = [];
         postbacks.forEach(doc => {
+            console.log("doc",doc.id);
             response.push(doc.data());
         })
+        console.log("response",response)
         return res.status(200).json({
             status: 200,
             message: '',
@@ -438,7 +473,6 @@ function handleMessage(sender_psid, received_message) {
 // Handles messaging_postbacks events
 const handlePostback = async (sender_psid, received_postback)  => {
     let payload = received_postback.payload;
-    console.log("payload",received_postback);
     const postbacks = await db.collection('Postbacks').doc(payload)
                             .get()
                             .then(doc => {
@@ -447,9 +481,51 @@ const handlePostback = async (sender_psid, received_postback)  => {
                                 } else {
                                     console.log("document data",doc.data());
                                     const data = doc.data();
-                                    data[payload].forEach(ele => {
-                                        const response = {[ele.type]: ele.title}
-                                        callSendAPI(sender_psid, response);
+                                    let response = "";
+                                    data['content'].forEach(ele => {
+                                        switch (ele.type) {
+                                            case "text":
+                                                response = {[ele.type]: ele.title}
+                                                break;
+                                            case "generic":
+                                                const aux = ele;
+                                                delete aux.ident;
+                                                delete aux.type;
+                                                let buttons = aux.attachment.payload.elements[0].buttons;
+                                                const aux_buttons = [];
+                                                buttons.forEach((button,key) => {
+                                                    if(button.type !== ''){
+                                                        // delete buttons[key];
+                                                        // return true;
+                                                        switch (button.type) {
+                                                            case 'web_url':
+                                                                if(button.type.url !== '' && button.type.title !== '')
+                                                                    aux_buttons.push(button);
+                                                                    // delete buttons[key]
+                                                                break;
+                                                            case 'postback':
+                                                                if(button.type.payload !== '' && button.type.title !== '')
+                                                                    aux_buttons.push(button);
+                                                                break;
+                                                            default:
+                                                                break;
+                                                        }
+                                                    }
+                                                    return true;
+                                                })
+                                                if(aux_buttons.length){
+                                                    aux.attachment.payload.elements[0].buttons = aux_buttons;
+                                                } else{
+                                                    delete aux.attachment.payload.elements[0].buttons;
+                                                }
+                                                response = aux
+                                                break;
+                                            default:
+                                                break;
+                                        }
+                                        if(response !== ""){
+                                            callSendAPI(sender_psid, ele);
+                                        }
                                     })
                                 }                                
                             })
@@ -467,7 +543,7 @@ const callSendAPI = async (sender_psid, response) => {
       },
       "message": response
   }
-  console.log("request.body",request_body);
+  console.log("request.body",JSON.stringify(request_body));
   const URL = "https://graph.facebook.com/v6.0/me/messages?access_token=" + API_MESSENGER_TOKEN;
   const myInit = {
       method: "POST",

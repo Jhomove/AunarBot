@@ -1,0 +1,18 @@
+{
+    "name": "Corpus",
+    "locale": "es",
+    "data": [
+      {
+        "intent": "saludos",
+        "utterances": [
+          "Hola",
+          "Buenos días"
+        ],
+        "answers": [
+          { "answer": "Hola ", "opts": "" },
+          { "answer": "Que tal", "opts": "" },
+          { "answer": "Buen día", "opts": "" }
+        ]
+      }
+    ]
+  }

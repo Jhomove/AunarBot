@@ -10,6 +10,9 @@ admin.initializeApp({
   databaseURL: "https://aunarbot-lnkibg.firebaseio.com"
 });
 
+//nlp
+const { dockStart } = require('@nlpjs/basic');
+
 
 const express = require('express');
 const cors = require('cors');
@@ -394,6 +397,46 @@ app.get('/api/read/postbacks', async (req,res) => {
     }
 })
 
+app.post('/api/create/intent', async (req,res) => {
+    try {
+        const data = req.body.data;
+        const name = data.name.replace(/ /g,'')
+        const intents_format = {
+            intent: name,
+            answers: [],
+            utterances: []
+        };
+
+        const says = data.says;
+        const answers = data.responses;
+        says.forEach(say => {
+            intents_format.utterances.push(say.text)
+        })
+
+        answers.forEach(answer => {
+            intents_format.answers.push({'answer': answer.ident})
+        })
+
+        db.collection('Intents').doc(name)
+            .set(intents_format)
+            .then(async() => {
+                return res.status(200).json({
+                    status: 200,
+                    data: intents_format,
+                    message: 'Se ha creado correctamente el postback.'
+                })
+            })
+            .catch(error => {
+                console.log("error",error);
+                return res.status(500).send(error);
+            })
+    } catch (error) {
+        console.log("error",error);
+        return res.status(500).send(error);
+    }
+    
+})
+
 // app.delete('/api/read/configuracion/postbacks')
 
 //WEBHOOK API MESSENGER
@@ -455,19 +498,38 @@ app.get('/webhook', (req, res) => {
   })
 
   // Handles messages events
-function handleMessage(sender_psid, received_message) {
-    let response;
-
+const handleMessage = async (sender_psid, received_message) => {
+    let response1;
     //Verificamos si el mensaje contiene texto
     if (received_message.text){
+        const intents = await db.collection('Intents').get();
+        const intents_format = {
+            "name": "Corpus",
+            "locale": "es",
+            "data": []
+        };
+        intents.forEach(doc => {
+            intents_format.data.push(doc.data());
+        })
+        console.log("intents",JSON.stringify(intents_format));
+        const dock = await dockStart({ use: ['Basic']});
+        const nlp = dock.get('nlp');
+        await nlp.addCorpus(intents_format);
+        await nlp.train();
+        // const response = await nlp.process('en', 'Who are you');
+        // console.log(response);
+        // const response = await nlp.process('en', 'I should go now');
+        const response = await nlp.process('es', received_message.text);
+        handlePostback(sender_psid,{payload: response.answer});
+        console.log("response----->",response);
         //Create the payload for a basic text message
-        response = {
-            "text": `You sent the message: "${received_message.text}"`
-        }
+        // response1 = {
+        //     "text": `You sent the message: "${received_message.text}"`
+        // }
     }
 
     //Sends the response message
-    callSendAPI(sender_psid, response);
+    // callSendAPI(sender_psid, response1);
 }
 
 // Handles messaging_postbacks events
@@ -476,8 +538,9 @@ const handlePostback = async (sender_psid, received_postback)  => {
     const postbacks = await db.collection('Postbacks').doc(payload)
                             .get()
                             .then(doc => {
+                                // eslint-disable-next-line promise/always-return
                                 if(!doc.exists){
-                                    console.log("No se encontraron coincidencias.");
+                                    return false;
                                 } else {
                                     console.log("document data",doc.data());
                                     const data = doc.data();
@@ -486,6 +549,10 @@ const handlePostback = async (sender_psid, received_postback)  => {
                                         switch (ele.type) {
                                             case "text":
                                                 response = {[ele.type]: ele.title}
+                                                console.log("response......",response);
+                                                if(response !== ""){
+                                                    callSendAPI(sender_psid, response);
+                                                }
                                                 break;
                                             case "generic":
                                                 const aux = ele;
@@ -519,12 +586,12 @@ const handlePostback = async (sender_psid, received_postback)  => {
                                                     delete aux.attachment.payload.elements[0].buttons;
                                                 }
                                                 response = aux
+                                                if(response !== ""){
+                                                    callSendAPI(sender_psid, ele);
+                                                }
                                                 break;
                                             default:
                                                 break;
-                                        }
-                                        if(response !== ""){
-                                            callSendAPI(sender_psid, ele);
                                         }
                                     })
                                 }                                
@@ -560,4 +627,3 @@ const callSendAPI = async (sender_psid, response) => {
   }
 }
 
-// exports.app = functions.https.onRequest(app);
